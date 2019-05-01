@@ -2,6 +2,7 @@ package internalapi
 
 import (
 	"net/http/httptest"
+	"time"
 
 	"github.com/go-openapi/strfmt"
 
@@ -28,7 +29,7 @@ func (suite *HandlerSuite) TestApproveMoveHandler() {
 	officeUser := testdatagen.MakeDefaultOfficeUser(suite.DB())
 
 	// Move is submitted and saved
-	err := move.Submit()
+	err := move.Submit(time.Now())
 	suite.Nil(err)
 	suite.Equal(models.MoveStatusSUBMITTED, move.Status, "expected Submitted")
 	suite.MustSave(&move)
@@ -60,7 +61,7 @@ func (suite *HandlerSuite) TestApproveMoveHandlerIncompleteOrders() {
 	officeUser := testdatagen.MakeDefaultOfficeUser(suite.DB())
 
 	// Move is submitted and saved
-	err := move.Submit()
+	err := move.Submit(time.Now())
 	suite.Nil(err)
 	suite.Equal(models.MoveStatusSUBMITTED, move.Status, "expected Submitted")
 	suite.MustSave(&move)
@@ -115,7 +116,7 @@ func (suite *HandlerSuite) TestCancelMoveHandler() {
 	suite.Nil(err)
 
 	// Move is submitted
-	err = move.Submit()
+	err = move.Submit(time.Now())
 	suite.Nil(err)
 	suite.Equal(models.MoveStatusSUBMITTED, move.Status, "expected Submitted")
 
@@ -197,10 +198,15 @@ func (suite *HandlerSuite) TestApprovePPMHandler() {
 	// And: the context contains the auth values
 	req := httptest.NewRequest("POST", "/personally_procured_moves/some_id/approve", nil)
 	req = suite.AuthenticateOfficeRequest(req, officeUser)
+	approveDate := strfmt.DateTime(time.Now())
 
+	newApprovePersonallyProcuredMovePayload := internalmessages.ApprovePersonallyProcuredMovePayload{
+		ApproveDate: &approveDate,
+	}
 	params := officeop.ApprovePPMParams{
-		HTTPRequest:              req,
-		PersonallyProcuredMoveID: strfmt.UUID(ppm.ID.String()),
+		HTTPRequest:                          req,
+		PersonallyProcuredMoveID:             strfmt.UUID(ppm.ID.String()),
+		ApprovePersonallyProcuredMovePayload: &newApprovePersonallyProcuredMovePayload,
 	}
 
 	// And: a ppm is approved
@@ -225,10 +231,15 @@ func (suite *HandlerSuite) TestApprovePPMHandlerForbidden() {
 	// And: the context contains the auth values
 	req := httptest.NewRequest("POST", "/personally_procured_moves/some_id/approve", nil)
 	req = suite.AuthenticateRequest(req, user)
+	approveDate := strfmt.DateTime(time.Now())
 
+	newApprovePersonallyProcuredMovePayload := internalmessages.ApprovePersonallyProcuredMovePayload{
+		ApproveDate: &approveDate,
+	}
 	params := officeop.ApprovePPMParams{
-		HTTPRequest:              req,
-		PersonallyProcuredMoveID: strfmt.UUID(ppm.ID.String()),
+		HTTPRequest:                          req,
+		PersonallyProcuredMoveID:             strfmt.UUID(ppm.ID.String()),
+		ApprovePersonallyProcuredMovePayload: &newApprovePersonallyProcuredMovePayload,
 	}
 
 	// And: a ppm is approved

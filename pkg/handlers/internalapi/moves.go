@@ -145,7 +145,6 @@ type SubmitMoveHandler struct {
 
 // Handle ... submit a move for approval
 func (h SubmitMoveHandler) Handle(params moveop.SubmitMoveForApprovalParams) middleware.Responder {
-
 	ctx, span := beeline.StartSpan(params.HTTPRequest.Context(), reflect.TypeOf(h).Name())
 	defer span.Send()
 
@@ -160,7 +159,8 @@ func (h SubmitMoveHandler) Handle(params moveop.SubmitMoveForApprovalParams) mid
 		return handlers.ResponseForError(h.Logger(), err)
 	}
 
-	err = move.Submit()
+	submitDate := time.Time(*params.SubmitMoveForApprovalPayload.PpmSubmitDate)
+	err = move.Submit(submitDate)
 	span.AddField("move-status", string(move.Status))
 	if err != nil {
 		h.HoneyZapLogger().TraceError(ctx, "Failed to change move status to submit",
@@ -244,10 +244,16 @@ func (h ShowShipmentSummaryWorksheetHandler) Handle(params moveop.ShowShipmentSu
 	ppmComputer := paperwork.NewSSWPPMComputer(rateengine.NewRateEngine(h.DB(), h.Logger()))
 
 	ssfd, err := models.FetchDataShipmentSummaryWorksheetFormData(h.DB(), session, moveID)
+	if err != nil {
+		h.Logger().Error("Error fetching data for SSW", zap.Error(err))
+		return handlers.ResponseForError(h.Logger(), err)
+	}
+
 	ssfd.PreparationDate = time.Time(params.PreparationDate)
 	ssfd.Obligations, err = ppmComputer.ComputeObligations(ssfd, h.Planner())
 	if err != nil {
 		h.Logger().Error("Error calculating obligations ", zap.Error(err))
+		return handlers.ResponseForError(h.Logger(), err)
 	}
 
 	page1Data, page2Data, err := models.FormatValuesShipmentSummaryWorksheet(ssfd)
@@ -261,6 +267,7 @@ func (h ShowShipmentSummaryWorksheetHandler) Handle(params moveop.ShowShipmentSu
 	// page 1
 	page1Layout := paperwork.ShipmentSummaryPage1Layout
 	page1Template, err := assets.Asset(page1Layout.TemplateImagePath)
+
 	if err != nil {
 		h.Logger().Error("Error reading template file", zap.String("asset", page1Layout.TemplateImagePath), zap.Error(err))
 		return moveop.NewShowShipmentSummaryWorksheetInternalServerError()
@@ -276,6 +283,7 @@ func (h ShowShipmentSummaryWorksheetHandler) Handle(params moveop.ShowShipmentSu
 	// page 2
 	page2Layout := paperwork.ShipmentSummaryPage2Layout
 	page2Template, err := assets.Asset(page2Layout.TemplateImagePath)
+
 	if err != nil {
 		h.Logger().Error("Error reading template file", zap.String("asset", page2Layout.TemplateImagePath), zap.Error(err))
 		return moveop.NewShowShipmentSummaryWorksheetInternalServerError()

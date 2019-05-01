@@ -37,10 +37,7 @@ export function fillAndSaveStorageInTransit() {
     .first()
     .type('Citycitycity', { force: true, delay: 150 });
 
-  cy
-    .get('input[name="warehouse_address.state"]')
-    .first()
-    .type('State', { force: true, delay: 150 });
+  cy.get('select[name="warehouse_address.state"]').select('NY');
 
   cy
     .get('input[name="warehouse_address.postal_code"]')
@@ -71,7 +68,34 @@ export function fillAndSaveStorageInTransit() {
     expect(text).to.include('Contact info');
     expect(text).to.include('123 Anystreet St.');
     expect(text).to.include('Citycitycity');
-    expect(text).to.include('State');
+    expect(text).to.include('NY');
+    expect(text).to.include('94703');
+  });
+}
+
+export function editAndSaveStorageInTransit() {
+  cy
+    .get('input[name="warehouse_name"]')
+    .first()
+    .type('the haus', { force: true, delay: 150 });
+
+  cy.get('.usa-button-primary').click();
+
+  // Refresh browser and make sure changes persist
+  cy.patientReload();
+
+  cy.get('.storage-in-transit').should($div => {
+    const text = $div.text();
+    expect(text).to.include('Dates');
+    expect(text).to.include('24-Oct-2018');
+    expect(text).to.include('Warehouse');
+    expect(text).to.include('warehouse haus');
+    expect(text).to.include('Warehouse ID');
+    expect(text).to.include('SIT123456SIT');
+    expect(text).to.include('Contact info');
+    expect(text).to.include('123 Anystreet St.');
+    expect(text).to.include('Citycitycity');
+    expect(text).to.include('NY');
     expect(text).to.include('94703');
   });
 }

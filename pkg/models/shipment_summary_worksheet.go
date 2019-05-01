@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -79,6 +80,7 @@ type ShipmentSummaryWorkSheetShipments struct {
 type ShipmentSummaryWorksheetPage2Values struct {
 	PreparationDate string
 	FormattedMovingExpenses
+	ServiceMemberSignature string
 }
 
 //FormattedMovingExpenses is an object representing the service member's moving expenses formatted for the SSW
@@ -111,14 +113,14 @@ type ShipmentSummaryFormData struct {
 	Order                   Order
 	CurrentDutyStation      DutyStation
 	NewDutyStation          DutyStation
-	WeightAllotment         WeightAllotment
-	TotalWeightAllotment    unit.Pound
+	WeightAllotment         SSWMaxWeightEntitlement
 	Shipments               Shipments
 	PersonallyProcuredMoves PersonallyProcuredMoves
 	PreparationDate         time.Time
 	Obligations             Obligations
 	MovingExpenseDocuments  []MovingExpenseDocument
 	PPMRemainingEntitlement unit.Pound
+	SignedCertification     SignedCertification
 }
 
 //Obligations an object representing the Max Obligation and Actual Obligation sections of the shipment summary worksheet
@@ -192,16 +194,10 @@ func FetchDataShipmentSummaryWorksheetFormData(db *pop.Connection, session *auth
 
 	serviceMember := move.Orders.ServiceMember
 	var rank ServiceMemberRank
-	var weightAllotment WeightAllotment
-	var totalEntitlement unit.Pound
+	var weightAllotment SSWMaxWeightEntitlement
 	if serviceMember.Rank != nil {
 		rank = ServiceMemberRank(*serviceMember.Rank)
-		weightAllotment = GetWeightAllotment(rank)
-		te, err := GetEntitlement(rank, move.Orders.HasDependents, move.Orders.SpouseHasProGear)
-		totalEntitlement = unit.Pound(te)
-		if err != nil {
-			return ShipmentSummaryFormData{}, err
-		}
+		weightAllotment = SSWGetEntitlement(rank, move.Orders.HasDependents, move.Orders.SpouseHasProGear)
 	}
 
 	movingExpenses, err := FetchMovingExpensesShipmentSummaryWorksheet(move, db, session)
@@ -209,41 +205,95 @@ func FetchDataShipmentSummaryWorksheetFormData(db *pop.Connection, session *auth
 		return ShipmentSummaryFormData{}, err
 	}
 
-	ppmRemainingEntitlement := CalculateRemainingPPMEntitlement(move, totalEntitlement)
+	ppmRemainingEntitlement, err := CalculateRemainingPPMEntitlement(move, weightAllotment.TotalWeight)
+	if err != nil {
+		return ShipmentSummaryFormData{}, err
+	}
 
+	signedCertification, err := FetchSignedCertificationsPPMPayment(db, session, moveID)
+	if err != nil {
+		return ShipmentSummaryFormData{}, err
+	}
+	if signedCertification == nil {
+		return ShipmentSummaryFormData{},
+			errors.New("shipment summary worksheet: signed certification is nil")
+	}
 	ssd := ShipmentSummaryFormData{
 		ServiceMember:           serviceMember,
 		Order:                   move.Orders,
 		CurrentDutyStation:      serviceMember.DutyStation,
 		NewDutyStation:          move.Orders.NewDutyStation,
 		WeightAllotment:         weightAllotment,
-		TotalWeightAllotment:    totalEntitlement,
 		Shipments:               move.Shipments,
 		PersonallyProcuredMoves: move.PersonallyProcuredMoves,
+		SignedCertification:     *signedCertification,
 		PPMRemainingEntitlement: ppmRemainingEntitlement,
 		MovingExpenseDocuments:  movingExpenses,
 	}
 	return ssd, nil
 }
 
+//SSWMaxWeightEntitlement weight allotment for the shipment summary worksheet.
+type SSWMaxWeightEntitlement struct {
+	Entitlement   unit.Pound
+	ProGear       unit.Pound
+	SpouseProGear unit.Pound
+	TotalWeight   unit.Pound
+}
+
+// adds a line item to shipment summary worksheet SSWMaxWeightEntitlement and increments total allotment
+func (wa *SSWMaxWeightEntitlement) addLineItem(field string, value int) {
+	r := reflect.ValueOf(wa).Elem()
+	f := r.FieldByName(field)
+	if f.IsValid() && f.CanSet() {
+		f.SetInt(int64(value))
+		wa.TotalWeight += unit.Pound(value)
+	}
+}
+
+// SSWGetEntitlement calculates the entitlement for the shipment summary worksheet based on the parameters of
+// a move (hasDependents, spouseHasProGear)
+func SSWGetEntitlement(rank ServiceMemberRank, hasDependents bool, spouseHasProGear bool) SSWMaxWeightEntitlement {
+	sswEntitlements := SSWMaxWeightEntitlement{}
+	entitlements := GetWeightAllotment(rank)
+	sswEntitlements.addLineItem("ProGear", entitlements.ProGearWeight)
+	if !hasDependents {
+		sswEntitlements.addLineItem("Entitlement", entitlements.TotalWeightSelf)
+		return sswEntitlements
+	}
+	sswEntitlements.addLineItem("Entitlement", entitlements.TotalWeightSelfPlusDependents)
+	if spouseHasProGear {
+		sswEntitlements.addLineItem("SpouseProGear", entitlements.ProGearWeightSpouse)
+	}
+	return sswEntitlements
+}
+
 // CalculateRemainingPPMEntitlement calculates the remaining PPM entitlement for PPM moves
 // a PPMs remaining entitlement weight is equal to total entitlement - hhg weight
-func CalculateRemainingPPMEntitlement(move Move, totalEntitlement unit.Pound) unit.Pound {
+func CalculateRemainingPPMEntitlement(move Move, totalEntitlement unit.Pound) (unit.Pound, error) {
 	var hhgActualWeight unit.Pound
-	if len(move.Shipments) > 0 && move.Shipments[0].NetWeight != nil {
+	if len(move.Shipments) > 0 {
+		if move.Shipments[0].NetWeight == nil {
+			return hhgActualWeight, errors.Errorf("Shipment %s does not have NetWeight", move.Shipments[0].ID)
+		}
 		hhgActualWeight = *move.Shipments[0].NetWeight
 	}
+
 	var ppmActualWeight unit.Pound
 	if len(move.PersonallyProcuredMoves) > 0 {
+		if move.PersonallyProcuredMoves[0].NetWeight == nil {
+			return ppmActualWeight, errors.Errorf("PPM %s does not have NetWeight", move.PersonallyProcuredMoves[0].ID)
+		}
 		ppmActualWeight = unit.Pound(*move.PersonallyProcuredMoves[0].NetWeight)
 	}
+
 	switch ppmRemainingEntitlement := totalEntitlement - hhgActualWeight; {
 	case ppmActualWeight < ppmRemainingEntitlement:
-		return ppmActualWeight
+		return ppmActualWeight, nil
 	case ppmRemainingEntitlement < 0:
-		return 0
+		return 0, nil
 	default:
-		return ppmRemainingEntitlement
+		return ppmRemainingEntitlement, nil
 	}
 }
 
@@ -252,7 +302,7 @@ func FetchMovingExpensesShipmentSummaryWorksheet(move Move, db *pop.Connection, 
 	var movingExpenses []MovingExpenseDocument
 	if len(move.PersonallyProcuredMoves) > 0 {
 		ppm := move.PersonallyProcuredMoves[0]
-		moveDocuments, err := FetchApprovedMovingExpenseDocuments(db, session, ppm.ID)
+		moveDocuments, err := FetchMovingExpenseDocuments(db, session, ppm.ID, nil)
 		if err != nil {
 			return movingExpenses, err
 		}
@@ -270,7 +320,7 @@ func FormatValuesShipmentSummaryWorksheetFormPage1(data ShipmentSummaryFormData)
 	page1 := ShipmentSummaryWorksheetPage1Values{}
 	page1.MaxSITStorageEntitlement = "90 days per each shipment"
 	// We don't currently know what allows POV to be authorized, so we are hardcoding it to "No" to start
-	page1.POVAuthorized = "NO"
+	page1.POVAuthorized = "No"
 	page1.PreparationDate = FormatDate(data.PreparationDate)
 
 	sm := data.ServiceMember
@@ -287,14 +337,14 @@ func FormatValuesShipmentSummaryWorksheetFormPage1(data ShipmentSummaryFormData)
 	page1.TAC = derefStringTypes(data.Order.TAC)
 	page1.SAC = derefStringTypes(data.Order.SAC)
 
-	page1.AuthorizedOrigin = FormatAuthorizedLocation(data.CurrentDutyStation)
-	page1.AuthorizedDestination = FormatAuthorizedLocation(data.NewDutyStation)
-	page1.NewDutyAssignment = FormatDutyStation(data.NewDutyStation)
+	page1.AuthorizedOrigin = FormatLocation(data.CurrentDutyStation)
+	page1.AuthorizedDestination = FormatLocation(data.NewDutyStation)
+	page1.NewDutyAssignment = FormatLocation(data.NewDutyStation)
 
-	page1.WeightAllotment = FormatWeightAllotment(data)
-	page1.WeightAllotmentProgear = FormatWeights(unit.Pound(data.WeightAllotment.ProGearWeight))
-	page1.WeightAllotmentProgearSpouse = FormatWeights(unit.Pound(data.WeightAllotment.ProGearWeightSpouse))
-	page1.TotalWeightAllotment = FormatWeights(data.TotalWeightAllotment)
+	page1.WeightAllotment = FormatWeights(data.WeightAllotment.Entitlement)
+	page1.WeightAllotmentProgear = FormatWeights(data.WeightAllotment.ProGear)
+	page1.WeightAllotmentProgearSpouse = FormatWeights(data.WeightAllotment.SpouseProGear)
+	page1.TotalWeightAllotment = FormatWeights(data.WeightAllotment.TotalWeight)
 
 	formattedShipments := FormatAllShipments(data.PersonallyProcuredMoves, data.Shipments)
 	page1.ShipmentNumberAndTypes = formattedShipments.ShipmentNumberAndTypes
@@ -372,22 +422,25 @@ func FormatValuesShipmentSummaryWorksheetFormPage2(data ShipmentSummaryFormData)
 	page2.FormattedMovingExpenses, err = FormatMovingExpenses(data.MovingExpenseDocuments)
 	page2.TotalMemberPaidRepeated = page2.TotalMemberPaid
 	page2.TotalGTCCPaidRepeated = page2.TotalGTCCPaid
+	page2.ServiceMemberSignature = FormatSignature(data)
 	if err != nil {
 		return page2, err
 	}
 	return page2, nil
 }
 
-//FormatWeightAllotment formats the weight allotment for Shipment Summary Worksheet
-func FormatWeightAllotment(data ShipmentSummaryFormData) string {
-	if data.Order.HasDependents {
-		return FormatWeights(unit.Pound(data.WeightAllotment.TotalWeightSelfPlusDependents))
-	}
-	return FormatWeights(unit.Pound(data.WeightAllotment.TotalWeightSelf))
+//FormatSignature formats a service member's signature for the Shipment Summary Worksheet
+func FormatSignature(data ShipmentSummaryFormData) string {
+	dateLayout := "02 Jan 2006 at 3:04pm"
+	dt := data.SignedCertification.Date.Format(dateLayout)
+	first := derefStringTypes(data.ServiceMember.FirstName)
+	last := derefStringTypes(data.ServiceMember.LastName)
+
+	return fmt.Sprintf("%s %s electronically signed on %s", first, last, dt)
 }
 
-//FormatAuthorizedLocation formats AuthorizedOrigin and AuthorizedDestination for Shipment Summary Worksheet
-func FormatAuthorizedLocation(dutyStation DutyStation) string {
+//FormatLocation formats AuthorizedOrigin and AuthorizedDestination for Shipment Summary Worksheet
+func FormatLocation(dutyStation DutyStation) string {
 	return fmt.Sprintf("%s, %s %s", dutyStation.Name, dutyStation.Address.State, dutyStation.Address.PostalCode)
 }
 
@@ -555,11 +608,6 @@ func FormatPPMPickupDate(ppm PersonallyProcuredMove) string {
 		return FormatDate(*ppm.OriginalMoveDate)
 	}
 	return ""
-}
-
-//FormatDutyStation formats DutyStation for Shipment Summary Worksheet
-func FormatDutyStation(dutyStation DutyStation) string {
-	return fmt.Sprintf("%s, %s", dutyStation.Name, dutyStation.Address.State)
 }
 
 //FormatOrdersTypeAndOrdersNumber formats OrdersTypeAndOrdersNumber for Shipment Summary Worksheet

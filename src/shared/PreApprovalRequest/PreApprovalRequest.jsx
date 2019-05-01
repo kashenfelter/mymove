@@ -10,41 +10,49 @@ import Editor from 'shared/PreApprovalRequest/Editor.jsx';
 import faCheck from '@fortawesome/fontawesome-free-solid/faCheck';
 import faPencil from '@fortawesome/fontawesome-free-solid/faPencilAlt';
 import faTimes from '@fortawesome/fontawesome-free-solid/faTimes';
-import { isNewAccessorial } from 'shared/preApprovals';
-import { getDetailsComponent } from './DetailsHelper';
+import { getDetailsComponent, isRobustAccessorial } from './DetailsHelper';
 
 function formatStatus(lineItem) {
   let formattedStatus = lineItem.status;
   if (lineItem.invoice_id) {
     formattedStatus = 'Invoiced';
   }
-
+  if (formattedStatus === 'CONDITIONALLY_APPROVED') return 'Approved';
   return formattedStatus[0].toUpperCase() + formattedStatus.substring(1).toLowerCase();
 }
 
-export function renderActionIcons(status, onEdit, onApproval, onDelete, shipmentLineItemId) {
+export function renderActionIcons(status, onEdit, onApproval, onDelete, shipmentLineItemId, canEdit35A) {
   // Only office users can approve requests.
   // If the request is approved/invoiced, they cannot be edited, only deleted.
-  //TODO: hiding edit action until we have implementation
+  const isEditable =
+    status === 'SUBMITTED' || ((status === 'CONDITIONALLY_APPROVED' || status === 'APPROVED') && canEdit35A);
   return (
     <Fragment>
-      {onApproval &&
-        status === 'SUBMITTED' && (
-          <span data-test="approve-request" onClick={() => onApproval(shipmentLineItemId)}>
-            <FontAwesomeIcon className="icon actionable" icon={faCheck} />
-          </span>
-        )}
-      {onEdit &&
-        status === 'SUBMITTED' && (
-          <span data-test="edit-request" onClick={onEdit}>
-            <FontAwesomeIcon className="icon actionable" icon={faPencil} />
-          </span>
-        )}
-      {onDelete && (
-        <span data-test="delete-request" onClick={onDelete}>
-          <FontAwesomeIcon className="icon actionable" icon={faTimes} />
-        </span>
-      )}
+      <div className="pre-approval-icon-container">
+        <div className="pre-approval-icon">
+          {onApproval &&
+            status === 'SUBMITTED' && (
+              <span data-test="approve-request" onClick={() => onApproval(shipmentLineItemId)}>
+                <FontAwesomeIcon className="icon actionable" icon={faCheck} />
+              </span>
+            )}
+        </div>
+        <div className="pre-approval-icon">
+          {onEdit &&
+            isEditable && (
+              <span data-test="edit-request" onClick={onEdit}>
+                <FontAwesomeIcon className="icon actionable" icon={faPencil} />
+              </span>
+            )}
+        </div>
+        <div className="pre-approval-icon">
+          {onDelete && (
+            <span data-test="delete-request" onClick={onDelete}>
+              <FontAwesomeIcon className="icon actionable" icon={faTimes} />
+            </span>
+          )}
+        </div>
+      </div>
     </Fragment>
   );
 }
@@ -94,7 +102,7 @@ export class PreApprovalRequest extends Component {
     const DetailsComponent = getDetailsComponent(
       row.tariff400ng_item.code,
       get(this.props, 'context.flags.robustAccessorial', false),
-      isNewAccessorial(row),
+      isRobustAccessorial(row),
     );
     if (this.state.showEditForm) {
       return (
@@ -130,7 +138,15 @@ export class PreApprovalRequest extends Component {
               {formatStatus(row)}
             </td>
             <td>
-              {showButtons && renderActionIcons(row.status, this.onEdit, this.props.onApproval, this.onDelete, row.id)}
+              {showButtons &&
+                renderActionIcons(
+                  row.status,
+                  this.onEdit,
+                  this.props.onApproval,
+                  this.onDelete,
+                  row.id,
+                  row.tariff400ng_item.code === '35A' && row.estimate_amount_cents && !row.invoice_id,
+                )}
             </td>
           </tr>
           {this.state.showDeleteForm && (
@@ -159,6 +175,7 @@ export class PreApprovalRequest extends Component {
     }
   }
 }
+
 PreApprovalRequest.propTypes = {
   shipmentLineItem: PropTypes.object.isRequired,
   onEdit: PropTypes.func,
