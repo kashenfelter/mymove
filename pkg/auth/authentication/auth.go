@@ -30,21 +30,14 @@ func UserAuthMiddleware(logger Logger) func(next http.Handler) http.Handler {
 			defer span.Send()
 
 			session := auth.SessionFromRequestContext(r)
-			// We must have a logged in session
-			if session == nil {
-				logger.Error("unauthorized access, no session token")
+			// We must have a logged in session and a user
+			if session == nil || session.UserID == uuid.Nil {
+				logger.Error("unauthorized access, no session token or user id")
 				http.Error(w, http.StatusText(401), http.StatusUnauthorized)
 				return
 			}
-
+			// DO NOT CHECK MILMOVE SESSION BECAUSE NEW SERVICE MEMBERS WON'T HAVE AN ID RIGHT AWAY
 			// This must be the right type of user for the application
-			if session.IsMilApp() && session.UserID == uuid.Nil {
-				logger.Error("unauthorized access for my.move.mil", zap.String("email", session.Email))
-				http.Error(w, http.StatusText(401), http.StatusUnauthorized)
-				return
-			}
-			// TODO: Add support for BackupContacts
-			// And this must be the right type of user for the application
 			if session.IsOfficeApp() && session.OfficeUserID == uuid.Nil {
 				logger.Error("unauthorized user for office.move.mil", zap.String("email", session.Email))
 				http.Error(w, http.StatusText(401), http.StatusUnauthorized)
