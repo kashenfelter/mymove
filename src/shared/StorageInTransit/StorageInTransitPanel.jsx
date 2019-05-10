@@ -18,12 +18,13 @@ import { isTspSite } from 'shared/constants.js';
 import SitStatusIcon from './SitStatusIcon';
 
 export class StorageInTransitPanel extends Component {
-  constructor() {
-    super();
+  constructor(props) {
+    super(props);
     this.state = {
       isRequestActionable: true,
       isCreatorActionable: true,
       error: null,
+      storageInTransits: {},
     };
   }
 
@@ -39,11 +40,41 @@ export class StorageInTransitPanel extends Component {
     return this.props.createStorageInTransit(this.props.shipmentId, createPayload);
   };
 
+  totalDaysUsed = storageInTransits => {
+    // calculate total and apply days-used to each SIT through state
+    let totalDaysUsed = 0;
+    storageInTransits.map(sit => {
+      let dateOut = sit.actual_delivery_date ? sit.actual_delivery_date : sit.out_date ? sit.out_date : null;
+      let daysUsed = this.getDaysUsed(sit.actual_start_date, dateOut);
+      totalDaysUsed += daysUsed;
+      return totalDaysUsed;
+      // TODO: set the value daysUsed inside the corresponding SIT in state
+    });
+    return totalDaysUsed;
+  };
+
+  getDaysUsed = (dateIn, dateOut) => {
+    // TODO: figure out how to get days from subtracting dates
+    let daysUsed = 0;
+    if (dateIn) {
+      if (dateOut) {
+        daysUsed = dateOut - dateIn + 1;
+      } else {
+        daysUsed = Date.now() - dateIn + 1;
+      }
+    }
+    return daysUsed;
+  };
+
+  componentDidMount() {
+    this.setState({ storageInTransits: this.props.storageInTransits });
+  }
+
   render() {
     const { storageInTransitEntitlement, storageInTransits } = this.props;
     const { error, isCreatorActionable } = this.state;
-    const daysUsed = 0; // placeholder
-    const daysRemaining = storageInTransitEntitlement - daysUsed;
+    const totalDaysUsed = 0; // placeholder
+    const daysRemaining = storageInTransitEntitlement - totalDaysUsed;
     const hasRequestedSIT = some(storageInTransits, sit => sit.status === 'REQUESTED');
 
     return (
