@@ -1,9 +1,7 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-
 import { connect } from 'react-redux';
 import { bindActionCreators } from 'redux';
-
 import { some } from 'lodash';
 
 import BasicPanel from 'shared/BasicPanel';
@@ -47,33 +45,33 @@ export class StorageInTransitPanel extends Component {
       let dateOut = sit.actual_delivery_date ? sit.actual_delivery_date : sit.out_date ? sit.out_date : null;
       let daysUsed = this.getDaysUsed(sit.actual_start_date, dateOut);
       totalDaysUsed += daysUsed;
+      // TODO: set the value daysUsed inside the corresponding SIT in state or create an object with Sit ID and value?
       return totalDaysUsed;
-      // TODO: set the value daysUsed inside the corresponding SIT in state
     });
     return totalDaysUsed;
   };
 
   getDaysUsed = (dateIn, dateOut) => {
-    // TODO: figure out how to get days from subtracting dates
     let daysUsed = 0;
+    // TODO: convert dates to moment if not already
     if (dateIn) {
       if (dateOut) {
-        daysUsed = dateOut - dateIn + 1;
+        daysUsed = Math.ceil(dateOut.diff(dateIn, 'days', true)) + 1;
       } else {
-        daysUsed = Date.now() - dateIn + 1;
+        daysUsed = Math.ceil(Date.now().diff(dateIn, 'days', true)) + 1;
       }
     }
     return daysUsed;
   };
 
-  componentDidMount() {
-    this.setState({ storageInTransits: this.props.storageInTransits });
-  }
+  // componentDidMount() {
+  //   this.setState({ storageInTransits: this.props.storageInTransits });
+  // }
 
   render() {
     const { storageInTransitEntitlement, storageInTransits } = this.props;
     const { error, isCreatorActionable } = this.state;
-    const totalDaysUsed = 0; // placeholder
+    const totalDaysUsed = 0; // placeholder: set to this.totalDaysUsed(storageInTransits)
     const daysRemaining = storageInTransitEntitlement - totalDaysUsed;
     const hasRequestedSIT = some(storageInTransits, sit => sit.status === 'REQUESTED');
 
