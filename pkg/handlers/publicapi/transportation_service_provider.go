@@ -6,7 +6,6 @@ import (
 	"github.com/gofrs/uuid"
 	"go.uber.org/zap"
 
-	"github.com/transcom/mymove/pkg/auth"
 	"github.com/transcom/mymove/pkg/gen/apimessages"
 	tspop "github.com/transcom/mymove/pkg/gen/restapi/apioperations/transportation_service_provider"
 	"github.com/transcom/mymove/pkg/handlers"
@@ -40,32 +39,32 @@ type GetTransportationServiceProviderHandler struct {
 func (h GetTransportationServiceProviderHandler) Handle(params tspop.GetTransportationServiceProviderParams) middleware.Responder {
 	var shipment *models.Shipment
 	var err error
-	session := auth.SessionFromRequestContext(params.HTTPRequest)
+	session, logger := h.SessionAndLoggerFromRequest(params.HTTPRequest)
 	shipmentID, _ := uuid.FromString(params.ShipmentID.String())
 
 	if session.IsTspUser() {
 		// TODO (2018_08_27 cgilmer): Find a way to check Shipment belongs to TSP without 2 queries
 		tspUser, fetchTSPByUserErr := models.FetchTspUserByID(h.DB(), session.TspUserID)
 		if fetchTSPByUserErr != nil {
-			h.Logger().Error("DB Query", zap.Error(fetchTSPByUserErr))
+			logger.Error("DB Query", zap.Error(fetchTSPByUserErr))
 			// return tspop.NewGetTransporationServiceProviderForbidden()
 		}
 
 		shipment, err = models.FetchShipmentByTSP(h.DB(), tspUser.TransportationServiceProviderID, shipmentID)
 		if err != nil {
-			handlers.ResponseForError(h.Logger(), err)
+			handlers.ResponseForError(logger, err)
 			return tspop.NewGetTransportationServiceProviderBadRequest()
 		}
 	} else if session.IsOfficeUser() {
 		shipment, err = models.FetchShipment(h.DB(), session, shipmentID)
 		if err != nil {
-			handlers.ResponseForError(h.Logger(), err)
+			handlers.ResponseForError(logger, err)
 			return tspop.NewGetTransportationServiceProviderBadRequest()
 		}
 	} else if session.IsServiceMember() {
 		shipment, err = models.FetchShipment(h.DB(), session, shipmentID)
 		if err != nil {
-			handlers.ResponseForError(h.Logger(), err)
+			handlers.ResponseForError(logger, err)
 			if err == models.ErrFetchForbidden {
 				return tspop.NewGetTransportationServiceProviderForbidden()
 			}
@@ -77,12 +76,12 @@ func (h GetTransportationServiceProviderHandler) Handle(params tspop.GetTranspor
 
 	transportationServiceProviderID := shipment.CurrentTransportationServiceProviderID()
 	if transportationServiceProviderID == uuid.Nil {
-		return handlers.ResponseForError(h.Logger(), err)
+		return handlers.ResponseForError(logger, err)
 	}
 
 	transportationServiceProvider, err := models.FetchTransportationServiceProvider(h.DB(), transportationServiceProviderID)
 	if err != nil {
-		return handlers.ResponseForError(h.Logger(), err)
+		return handlers.ResponseForError(logger, err)
 	}
 
 	transportationServiceProviderPayload := payloadForTransportationServiceProviderModel(*transportationServiceProvider)
