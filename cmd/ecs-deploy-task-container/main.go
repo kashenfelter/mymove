@@ -87,6 +87,7 @@ const (
 	repositoryNameFlag     string = "repository-name"
 	imageTagFlag           string = "image-tag"
 	commandFlag            string = "command"
+	commandArgsFlag        string = "command-args"
 )
 
 func initFlags(flag *pflag.FlagSet) {
@@ -112,6 +113,7 @@ func initFlags(flag *pflag.FlagSet) {
 	flag.String(repositoryNameFlag, "", fmt.Sprintf("The name of the repository where the tagged image resides"))
 	flag.String(imageTagFlag, "", "The name of the image tag referenced in the task definition")
 	flag.String(commandFlag, "", fmt.Sprintf("The name of the command to run inside the docker container (choose %q)", commands))
+	flag.String(commandArgsFlag, "", fmt.Sprintf("The space separated arguments for the command"))
 
 	// EIA Open Data API
 	// The EIA Key is set in the Local or CircleCI environment and not in Chamber.
@@ -295,6 +297,7 @@ func main() {
 
 	// Get the current task definition (for rollback)
 	commandName := v.GetString(commandFlag)
+	commandArgs := strings.Split(v.GetString(commandArgsFlag), " ")
 	ruleName := fmt.Sprintf("%s-%s", commandName, v.GetString(environmentFlag))
 	targetsOutput, err := serviceCloudWatchEvents.ListTargetsByRule(&cloudwatchevents.ListTargetsByRuleInput{
 		Rule: aws.String(ruleName),
@@ -389,7 +392,7 @@ func main() {
 					aws.String("--"),
 					aws.String(fmt.Sprintf("/bin/%s", commandName)),
 				},
-				Command: []*string{},
+				Command: aws.StringSlice(commandArgs),
 				Environment: []*ecs.KeyValuePair{
 					{
 						Name:  aws.String("ENV"),

@@ -91,8 +91,10 @@ func main() {
 
 	var dbCreds *credentials.Credentials
 	if session != nil {
-		// We want to get the credentials from the session,
+		// We want to get the credentials from the logged in AWS session rather than create directly,
 		// because the session conflates the environment, shared, and container metdata config
+		// within NewSession.  With stscreds, we use the Secure Token Service,
+		// to assume the given role (that has rds db connect permissions).
 		dbCreds = stscreds.NewCredentials(session, v.GetString(cli.DbIamRoleFlag))
 	}
 
