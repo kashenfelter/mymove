@@ -18,6 +18,9 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	awssession "github.com/aws/aws-sdk-go/aws/session"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/csrf"
 	"github.com/honeycombio/beeline-go"
@@ -347,8 +350,28 @@ func serveFunction(cmd *cobra.Command, args []string) error {
 		logger.Fatal("Must provide the Login.gov hostname parameter, exiting")
 	}
 
+	var session *awssession.Session
+	if v.GetBool(cli.DbIamFlag) || (v.GetString(cli.EmailBackendFlag) == "ses") || (v.GetString(cli.StorageBackendFlag) == "s3") {
+		c, errorConfig := cli.GetAWSConfig(v, v.GetBool(cli.VerboseFlag))
+		if errorConfig != nil {
+			logger.Fatal(errors.Wrap(errorConfig, "error creating aws config").Error())
+		}
+		s, errorSession := awssession.NewSession(c)
+		if errorSession != nil {
+			logger.Fatal(errors.Wrap(errorSession, "error creating aws session").Error())
+		}
+		session = s
+	}
+
+	var dbCreds *credentials.Credentials
+	if session != nil {
+		// We want to get the credentials from the session,
+		// because the session conflates the environment, shared, and container metdata config
+		dbCreds = stscreds.NewCredentials(session, v.GetString(cli.DbIamRoleFlag))
+	}
+
 	// Create a connection to the DB
-	dbConnection, err := cli.InitDatabase(v, logger)
+	dbConnection, err := cli.InitDatabase(v, dbCreds, logger)
 	if err != nil {
 		if dbConnection == nil {
 			// No connection object means that the configuraton failed to validate and we should kill server startup
@@ -393,7 +416,7 @@ func serveFunction(cmd *cobra.Command, args []string) error {
 	}
 
 	// Email
-	notificationSender := cli.InitEmail(v, logger)
+	notificationSender := cli.InitEmail(v, session, logger)
 	handlerContext.SetNotificationSender(notificationSender)
 
 	build := v.GetString(cli.BuildFlag)
@@ -410,7 +433,7 @@ func serveFunction(cmd *cobra.Command, args []string) error {
 	handlerContext.SetSendProductionInvoice(v.GetBool(cli.GEXSendProdInvoiceFlag))
 
 	// Storage
-	storer := cli.InitStorage(v, logger)
+	storer := cli.InitStorage(v, session, logger)
 	handlerContext.SetFileStorer(storer)
 
 	certificates, rootCAs, err := cli.InitDoDCertificates(v, logger)

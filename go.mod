@@ -6,7 +6,7 @@ require (
 	github.com/0xAX/notificator v0.0.0-20181105090803-d81462e38c21 // indirect
 	github.com/99designs/aws-vault v0.0.0-20190321042810-2bec5348b22f
 	github.com/99designs/keyring v0.0.0-20190110203331-82da6802f65f
-	github.com/aws/aws-sdk-go v1.19.28
+	github.com/aws/aws-sdk-go v1.19.35
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/codegangsta/envy v0.0.0-20141216192214-4b78388c8ce4 // indirect
 	github.com/codegangsta/gin v0.0.0-20171026143024-cafe2ce98974

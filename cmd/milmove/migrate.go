@@ -6,6 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	awssession "github.com/aws/aws-sdk-go/aws/session"
 	"github.com/gobuffalo/pop"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -92,8 +95,26 @@ func migrateFunction(cmd *cobra.Command, args []string) error {
 		logger.Fatal("invalid configuration", zap.Error(err))
 	}
 
+	var session *awssession.Session
+	if v.GetBool(cli.DbIamFlag) {
+		c, errorConfig := cli.GetAWSConfig(v, v.GetBool(cli.VerboseFlag))
+		if errorConfig != nil {
+			logger.Fatal(errors.Wrap(errorConfig, "error creating aws config").Error())
+		}
+		s, errorSession := awssession.NewSession(c)
+		if errorSession != nil {
+			logger.Fatal(errors.Wrap(errorSession, "error creating aws session").Error())
+		}
+		session = s
+	}
+
+	var dbCreds *credentials.Credentials
+	if session != nil {
+		dbCreds = stscreds.NewCredentials(session, v.GetString(cli.DbIamRoleFlag))
+	}
+
 	// Create a connection to the DB
-	dbConnection, err := cli.InitDatabase(v, logger)
+	dbConnection, err := cli.InitDatabase(v, dbCreds, logger)
 	if err != nil {
 		if dbConnection == nil {
 			// No connection object means that the configuraton failed to validate and we should kill server startup

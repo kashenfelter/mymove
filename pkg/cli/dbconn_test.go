@@ -17,7 +17,7 @@ func (suite *cliTestSuite) TestInitDatabase() {
 	}
 
 	suite.Setup(InitDatabaseFlags, []string{})
-	conn, err := InitDatabase(suite.viper, suite.logger)
+	conn, err := InitDatabase(suite.viper, nil, suite.logger)
 	suite.Nil(err)
 	suite.NotNil(conn)
 }
