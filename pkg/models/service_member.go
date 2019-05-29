@@ -102,15 +102,11 @@ func FetchServiceMemberForUser(ctx context.Context, db *pop.Connection, session 
 		"DutyStation.Address",
 		"DutyStation.TransportationOffice",
 		"DutyStation.TransportationOffice.Address",
-		"Orders.Moves",
-		"Orders.Moves.Shipments",
 		"Orders.NewDutyStation",
 		"Orders.NewDutyStation.Address",
 		"Orders.NewDutyStation.TransportationOffice",
-		"Orders.NewDutyStation.TransportationOffice.Address",
 		"Orders.UploadedOrders",
 		"ResidentialAddress").Find(&serviceMember, id)
-	// err := db.Q().Eager().Find(&serviceMember, id)
 	if err != nil {
 		if errors.Cause(err).Error() == recordNotFoundErrorString {
 			return ServiceMember{}, ErrFetchNotFound
