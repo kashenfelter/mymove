@@ -102,6 +102,8 @@ func FetchServiceMemberForUser(ctx context.Context, db *pop.Connection, session 
 		"DutyStation.Address",
 		"DutyStation.TransportationOffice",
 		"DutyStation.TransportationOffice.Address",
+		"Orders.Moves",
+		"Orders.Moves.Shipments",
 		"Orders.NewDutyStation",
 		"Orders.NewDutyStation.Address",
 		"Orders.NewDutyStation.TransportationOffice",
