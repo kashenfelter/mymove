@@ -99,13 +99,9 @@ func FetchServiceMemberForUser(ctx context.Context, db *pop.Connection, session 
 		"BackupMailingAddress",
 		"BackupContacts",
 		"DutyStation",
-		"DutyStation.Address",
 		"DutyStation.TransportationOffice",
-		"DutyStation.TransportationOffice.Address",
 		"Orders.NewDutyStation",
-		"Orders.NewDutyStation.Address",
 		"Orders.NewDutyStation.TransportationOffice",
-		"Orders.UploadedOrders",
 		"ResidentialAddress").Find(&serviceMember, id)
 	if err != nil {
 		if errors.Cause(err).Error() == recordNotFoundErrorString {
